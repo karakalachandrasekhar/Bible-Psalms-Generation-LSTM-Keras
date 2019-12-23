@@ -1,0 +1,122 @@
+#Load basic libraries
+import pandas as pd
+import numpy as np
+import string
+import re
+import gc
+
+from keras.preprocessing.text import Tokenizer
+from keras.utils import to_categorical
+from keras.models import Sequential
+from keras.layers import Dense,Dropout
+from keras.layers import LSTM
+from keras.layers import Embedding
+from keras.preprocessing.sequence import pad_sequences
+from keras.callbacks import ModelCheckpoint
+
+#PATHS
+BiblePath = 'F:\\DataScience\\Neural Networks\\RNN LSTM\\Bible Project\\English__King_James_Version__kjv__LTR.xlsx'
+
+# Read bible Text 
+Bible = pd.read_excel(BiblePath,dtype={'Book': str, 'Chapter': np.int32,'Verse':np.int32,'Text':str})
+
+# Read only Psalms books
+PsalmsText = Bible.query('Book == "19O" or Book == "20O" or Book == "21O" or Book == "22O"')
+
+BibleText = []
+BibleText.extend(list(PsalmsText.Text.values))
+
+#Summary Statistics of BibleText
+len(BibleText) # 36986
+
+# Text Preprocessing
+#1. remove numbers
+#2. remove alphanumeric numbers
+def clean_text(txt):
+    txt = "".join(v for v in txt if v not in string.punctuation).lower()
+    txt = txt.encode("utf8").decode("ascii",'ignore')
+    return txt 
+
+BibleTextCleaned = [clean_text(x) for x in BibleText]
+
+# Generating Sequence of N-gram Tokens
+tokenizer = Tokenizer()
+
+def getSequenceFromTokens(corpus):
+    tokenizer.fit_on_texts(corpus)
+    totalWords = len(tokenizer.word_index)+1
+    
+    Seq_in = []
+    Seq_out = []
+    for line in corpus:
+        token_list=tokenizer.texts_to_sequences([line])[0]
+        for i in range(1,len(token_list)):
+            n_gram_seq = token_list[:i+1]
+            Seq_in.append(n_gram_seq)
+    return(Seq_in,totalWords)
+    
+Seq_Input, Total_Words = getSequenceFromTokens(BibleTextCleaned)
+
+# Padding the Sequences and obtain Variables
+
+def generateSequencePadding(inputSequence,TotWords):
+    maxSeqLength = max([len(x) for x in inputSequence])
+    inputSequence = np.array(pad_sequences(inputSequence,maxlen=maxSeqLength,padding='pre'))
+    predictors,label = inputSequence[:,:-1],inputSequence[:,-1]
+    label= to_categorical(label,num_classes=TotWords)
+    return(predictors,label,maxSeqLength)
+    
+predictors, label, max_sequence_len = generateSequencePadding(Seq_Input,Total_Words)
+
+input_len = max_sequence_len -1
+# Create a LSTM Model
+model = Sequential()
+model.add(Embedding(Total_Words, 10, input_length=input_len))
+model.add(LSTM(256))
+model.add(Dropout(0.20))
+model.add(Dense(Total_Words,activation='softmax'))
+optim = RMSprop(lr=0.01)
+model.compile(loss = 'categorical_crossentropy',optimizer='adam')
+
+# define the checkpoint
+filepath="Bible-Songs-Weights_ADAM-{epoch:02d}-{loss:.4f}.hdf5"
+checkpoint = ModelCheckpoint(filepath, monitor='loss', verbose=5, save_best_only=True, mode='min')
+callbacks_list = [checkpoint]
+
+model.fit(predictors,label,epochs=200,batch_size=128,callbacks=callbacks_list)
+# Achieved a loss of 1.2821 at 172 epoch
+
+# generate a sequence from a language model
+
+filename = 'F:\\DataScience\\Neural Networks\\RNN LSTM\\Bible Project\\Bible-Songs-Weights_ADAM-172-1.2821.hdf5'
+model = Sequential()
+model.add(Embedding(Total_Words, 10, input_length=input_len))
+model.add(LSTM(256))
+model.add(Dropout(0.20))
+model.add(Dense(Total_Words,activation='softmax'))
+model.load_weights(filename)
+model.compile(loss = 'categorical_crossentropy',optimizer='adam')
+
+def generate_text(seed_text, next_words, model, max_sequence_len):
+    for _ in range(next_words):
+        token_list = tokenizer.texts_to_sequences([seed_text])[0]
+        token_list = pad_sequences([token_list], maxlen=max_sequence_len-1, padding='pre')
+        predicted = model.predict_classes(token_list, verbose=0)
+        
+        output_word = ""
+        for word,index in tokenizer.word_index.items():
+            if index == predicted:
+                output_word = word
+                break
+        seed_text += " "+output_word
+    return (seed_text.title())
+
+seed= "blessed is the man"
+produce_words = 100
+model = filename
+max_sequence_length= 57
+
+print(generate_text(seed,produce_words,model,max_sequence_length))
+
+
+
