@@ -1,3 +1,6 @@
+Note: This Project is for learning Text generation using RNN - LSTM only. Not to hurt any religious Sentiments
+
+
 # Bible-Psalms-Generation-LSTM-Keras
 Generate Psalms from bible using RNN-LSTM in Keras
 
